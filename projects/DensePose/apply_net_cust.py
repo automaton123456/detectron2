@@ -291,7 +291,35 @@ class ShowAction(InferenceAction):
         I = I.astype(np.uint8)
         np.save("/content/output_orig.npy", I)
 
-        print(np.where(I == 1))
+        I[I == 2] = 1
+        I[I == 17] = 15
+        I[I == 18] = 16
+        I[I == 7] = 9
+        I[I == 8] = 10
+        I[I == 11] = 13
+        I[I == 12] = 14
+        I[I == 19] = 21
+        I[I == 20] = 22       
+        
+        #0      = Background
+        #1, 2   = Torso
+        #3      = Right Hand
+        #4      = Left Hand
+        #5      = Right Foot
+        #6      = Left Foot
+        #7, 9   = Upper Leg Right
+        #8, 10  = Upper Leg Left
+        #11, 13 = Lower Leg Right
+        #12, 14 = Lower Leg Left
+        #15, 17 = Upper Arm Left
+        #16, 18 = Upper Arm Right
+        #19, 21 = Lower Arm Left
+        #20, 22 = Lower Arm Right
+        #23, 24 = Head
+
+        #print(np.where(I == 1))
+
+        print(I.shape)
 
         I = I.astype(np.float32) * 10.625
         I = I.astype(np.uint8)
@@ -307,10 +335,12 @@ class ShowAction(InferenceAction):
         my_array = cv2.applyColorMap(np.asarray([[[0,0,0]]], dtype=np.uint8), CMAP)
         bg = my_array[0][0]
 
-        I[np.all(I == bg, axis=-1)] = [0,0,0]
+        I[np.all(I == bg, axis=-1)] = [255,255,255]
+        
         
         x, y, w, h = bbox[0].astype(np.int32)
-        image_target_bgr = np.zeros(shape=image.shape, dtype=np.uint8)
+        #image_target_bgr = np.zeros(shape=image.shape, dtype=np.uint8)
+        image_target_bgr = np.full(image.shape, 255, dtype=np.uint8)
         image_target_bgr[y:y+h, x:x+w] = I
 
         np.save("/content/output.npy", I)
