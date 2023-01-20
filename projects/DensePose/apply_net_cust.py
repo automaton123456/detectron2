@@ -289,7 +289,6 @@ class ShowAction(InferenceAction):
         
         I = data[0][0][0].labels.cpu().numpy()
         I = I.astype(np.uint8)
-        np.save("/content/output_orig.npy", I)
 
         I[I == 2] = 1
         I[I == 17] = 15
@@ -299,7 +298,10 @@ class ShowAction(InferenceAction):
         I[I == 11] = 13
         I[I == 12] = 14
         I[I == 19] = 21
-        I[I == 20] = 22       
+        I[I == 20] = 22
+        I[I == 24] = 23 
+
+        np.save("/content/output_orig.npy", I)       
         
         #0      = Background
         #1, 2   = Torso
