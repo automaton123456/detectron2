@@ -166,6 +166,13 @@ class DensePoseROIHeads(StandardROIHeads):
                 return densepose_loss_dict
         else:
             pred_boxes = [x.pred_boxes for x in instances]
+            
+            #Enlarge BBOX by 5% as it cuts off feet
+            instances[0].pred_boxes[0].tensor[0][0] -= instances[0].pred_boxes[0].tensor[0][0] * 0.05
+            instances[0].pred_boxes[0].tensor[0][1] -= instances[0].pred_boxes[0].tensor[0][1] * 0.05
+            instances[0].pred_boxes[0].tensor[0][2] += instances[0].pred_boxes[0].tensor[0][2] * 0.05
+            instances[0].pred_boxes[0].tensor[0][3] += instances[0].pred_boxes[0].tensor[0][3] * 0.05
+
 
             if self.use_decoder:
                 # pyre-fixme[29]: `Union[nn.Module, torch.Tensor]` is not a function.
