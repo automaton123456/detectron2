@@ -326,7 +326,8 @@ class ShowAction(InferenceAction):
         I = I.astype(np.float32) * 10.625
         I = I.astype(np.uint8)
 
-        CMAP = cv2.COLORMAP_VIRIDIS #
+        CMAP = cv2.COLORMAP_PARULA #Fave so far
+        #CMAP = cv2.COLORMAP_VIRIDIS #
         #CMAP = cv2.COLORMAP_CIVIDIS
         #CMAP = cv2.COLORMAP_DEEPGREEN
         #CMAP = cv2.COLORMAP_BONE
