@@ -301,7 +301,12 @@ class ShowAction(InferenceAction):
         I[I == 20] = 22
         I[I == 24] = 23 
 
-        np.save("/content/output_orig.npy", I)       
+        np.save("/content/output_orig.npy", I) 
+
+        outline = np.copy(I)
+        outline[outline > 0] = 1
+
+        np.save("/content/output_outline.npy", outline)       
         
         #0      = Background
         #1, 2   = Torso
