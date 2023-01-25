@@ -9,6 +9,8 @@ from re import X
 import sys
 from typing import Any, ClassVar, Dict, List
 import torch
+import cv2
+import subprocess
 
 from detectron2.config import CfgNode, get_cfg
 from detectron2.data.detection_utils import read_image
@@ -108,7 +110,7 @@ class InferenceAction(Action):
 
     @classmethod
     def setup_config(
-        cls: type, config_fpath: str, model_fpath: str, args: argparse.Namespace, opts: List[str]
+            cls: type, config_fpath: str, model_fpath: str, args: argparse.Namespace, opts: List[str]
     ):
         cfg = get_cfg()
         add_densepose_config(cfg)
@@ -161,7 +163,7 @@ class DumpAction(InferenceAction):
 
     @classmethod
     def execute_on_outputs(
-        cls: type, context: Dict[str, Any], entry: Dict[str, Any], outputs: Instances
+            cls: type, context: Dict[str, Any], entry: Dict[str, Any], outputs: Instances
     ):
         image_fpath = entry["file_name"]
         logger.info(f"Processing {image_fpath}")
@@ -225,7 +227,7 @@ class ShowAction(InferenceAction):
             "visualizations",
             metavar="<visualizations>",
             help="Comma separated list of visualizations, possible values: "
-            "[{}]".format(",".join(sorted(cls.VISUALIZERS.keys()))),
+                 "[{}]".format(",".join(sorted(cls.VISUALIZERS.keys()))),
         )
         parser.add_argument(
             "--min_score",
@@ -258,7 +260,7 @@ class ShowAction(InferenceAction):
 
     @classmethod
     def setup_config(
-        cls: type, config_fpath: str, model_fpath: str, args: argparse.Namespace, opts: List[str]
+            cls: type, config_fpath: str, model_fpath: str, args: argparse.Namespace, opts: List[str]
     ):
         opts.append("MODEL.ROI_HEADS.SCORE_THRESH_TEST")
         opts.append(str(args.min_score))
@@ -269,8 +271,79 @@ class ShowAction(InferenceAction):
         return cfg
 
     @classmethod
+    def generate_vector(file_in, file_out):
+        cmd = "autotrace -filter-iterations=4 -input-format bmp -output-format svg -output-file " + file_out + " " + file_in
+        subprocess.Popen(cmd)
+
+    @classmethod
+    def double_image(image):
+        scale_percent = 200  # percent of original size
+        width = int(image.shape[1] * scale_percent / 100)
+        height = int(image.shape[0] * scale_percent / 100)
+        dim = (width, height)
+
+        # resize image
+        image = cv2.resize(image, dim, interpolation=cv2.INTER_AREA)
+        return image
+
+    @classmethod
+    def find_body_part(body_parts, body_part_index):
+        arr = body_parts.copy()
+        arr[arr != body_part_index] = 0
+        arr[arr == body_part_index] = 255
+
+        contours, hierarchy = cv2.findContours(arr, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        return contours
+
+    @classmethod
+    def generate_bitmaps(image, output_orig, outline):
+        blank = np.zeros(shape=image.shape, dtype=np.uint8)
+        blank_outline = np.zeros(shape=image.shape, dtype=np.uint8)
+        solid_outline = np.zeros(shape=image.shape, dtype=np.uint8)
+
+        # Individual body parts
+        for i in range(1, 24):
+            contours = find_body_part(orig, i)
+
+            if len(contours) > 0:
+                cv2.drawContours(image, contours, -1, (0, 0, 0), 2)
+                cv2.drawContours(blank, contours, -1, (255, 255, 255), 2)
+
+        # Outline all parts    
+        blank = cv2.bitwise_not(blank)
+        blank = double_image(blank)
+        cv2.imwrite("/content/blank.bmp", blank)
+        generate_vector("/content/blank.bmp", "/content/blank.svg")
+
+        # Original image
+        image = double_image(image)
+        cv2.imwrite("/content/image.bmp", image)
+        generate_vector("/content/image.bmp", "/content/image.svg")
+
+        # Gray scale image	
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        cv2.imwrite("/content/image_grey.bmp", gray)
+        generate_vector("/content/image_bw.bmp", "/content/image_bw.svg")
+
+        # All in one outline
+        contours_o = find_body_part(outline, 1)
+        if len(contours_o) > 0:
+            cv2.drawContours(blank_outline, contours_o, -1, (255, 255, 255), 2)
+            cv2.drawContours(solid_outline, contours_o, -1, (255, 255, 255), -1)
+
+        blank_outline = cv2.bitwise_not(blank_outline)
+        blank_outline = double_image(blank_outline)
+        cv2.imwrite("/content/blank_outline.bmp", blank_outline)
+        generate_vector("/content/blank_outline.bmp", "/content/blank_outline.svg")
+
+        solid_outline = cv2.bitwise_not(solid_outline)
+        solid_outline = double_image(solid_outline)
+        cv2.imwrite("/content/solid_outline.bmp", solid_outline)
+        generate_vector("/content/solid_outline.bmp", "/content/solid_outline.svg")
+
+    @classmethod
     def execute_on_outputs(
-        cls: type, context: Dict[str, Any], entry: Dict[str, Any], outputs: Instances
+            cls: type, context: Dict[str, Any], entry: Dict[str, Any], outputs: Instances
     ):
         import cv2
         import numpy as np
@@ -284,9 +357,9 @@ class ShowAction(InferenceAction):
         image = np.tile(image[:, :, np.newaxis], [1, 1, 3])
 
         data = extractor(outputs)
-        #image_vis = visualizer.visualize(image, data)
+        # image_vis = visualizer.visualize(image, data)
         bbox = data[0][1].cpu().numpy()
-        
+
         I = data[0][0][0].labels.cpu().numpy()
         I = I.astype(np.uint8)
 
@@ -299,69 +372,72 @@ class ShowAction(InferenceAction):
         I[I == 12] = 14
         I[I == 19] = 21
         I[I == 20] = 22
-        I[I == 24] = 23 
+        I[I == 24] = 23
 
-        np.save("/content/output_orig.npy", I) 
+        output_orig = np.copy(I)
+        np.save("/content/output_orig.npy", output_orig)
 
         outline = np.copy(I)
         outline[outline > 0] = 1
 
-        np.save("/content/output_outline.npy", outline)       
-        
-        #0      = Background
-        #1, 2   = Torso
-        #3      = Right Hand
-        #4      = Left Hand
-        #5      = Right Foot
-        #6      = Left Foot
-        #7, 9   = Upper Leg Right
-        #8, 10  = Upper Leg Left
-        #11, 13 = Lower Leg Right
-        #12, 14 = Lower Leg Left
-        #15, 17 = Upper Arm Left
-        #16, 18 = Upper Arm Right
-        #19, 21 = Lower Arm Left
-        #20, 22 = Lower Arm Right
-        #23, 24 = Head
+        np.save("/content/output_outline.npy", outline)
 
-        #print(np.where(I == 1))
+        # 0      = Background
+        # 1, 2   = Torso
+        # 3      = Right Hand
+        # 4      = Left Hand
+        # 5      = Right Foot
+        # 6      = Left Foot
+        # 7, 9   = Upper Leg Right
+        # 8, 10  = Upper Leg Left
+        # 11, 13 = Lower Leg Right
+        # 12, 14 = Lower Leg Left
+        # 15, 17 = Upper Arm Left
+        # 16, 18 = Upper Arm Right
+        # 19, 21 = Lower Arm Left
+        # 20, 22 = Lower Arm Right
+        # 23, 24 = Head
+
+        # print(np.where(I == 1))
 
         print(I.shape)
 
         I = I.astype(np.float32) * 10.625
         I = I.astype(np.uint8)
 
-        CMAP = cv2.COLORMAP_PARULA #Fave so far
-        #CMAP = cv2.COLORMAP_VIRIDIS #
-        #CMAP = cv2.COLORMAP_CIVIDIS
-        #CMAP = cv2.COLORMAP_DEEPGREEN
-        #CMAP = cv2.COLORMAP_BONE
-        #CMAP = cv2.COLORMAP_JET
+        CMAP = cv2.COLORMAP_PARULA  # Fave so far
         I = cv2.applyColorMap(I, CMAP)
 
-        #Make sure background is black
-        my_array = cv2.applyColorMap(np.asarray([[[0,0,0]]], dtype=np.uint8), CMAP)
+        # Make sure background is black
+        my_array = cv2.applyColorMap(np.asarray([[[0, 0, 0]]], dtype=np.uint8), CMAP)
         bg = my_array[0][0]
 
-        I[np.all(I == bg, axis=-1)] = [255,255,255]
-        
-        
+        I[np.all(I == bg, axis=-1)] = [255, 255, 255]
+
         x, y, w, h = bbox[0].astype(np.int32)
-        #image_target_bgr = np.zeros(shape=image.shape, dtype=np.uint8)
+        # image_target_bgr = np.zeros(shape=image.shape, dtype=np.uint8)
         image_target_bgr = np.full(image.shape, 255, dtype=np.uint8)
-        image_target_bgr[y:y+h, x:x+w] = I
+        image_target_bgr[y:y + h, x:x + w] = I
 
         np.save("/content/output.npy", I)
 
         cv2.imwrite("/content/mytest.jpg", image_target_bgr)
 
-        #entry_idx = context["entry_idx"] + 1
-        #out_fname = cls._get_out_fname(entry_idx, context["out_fname"])
-        #out_dir = os.path.dirname(out_fname)
-        #if len(out_dir) > 0 and not os.path.exists(out_dir):
+        # output_orig
+        # outline
+        # I
+
+        generate_bitmaps(I, output_orig, outline)
+
+        np.save("/content/output_outline.npy", outline)
+
+        # entry_idx = context["entry_idx"] + 1
+        # out_fname = cls._get_out_fname(entry_idx, context["out_fname"])
+        # out_dir = os.path.dirname(out_fname)
+        # if len(out_dir) > 0 and not os.path.exists(out_dir):
         #    os.makedirs(out_dir)
-        #cv2.imwrite(out_fname, image_vis)
-        #logger.info(f"Output saved to {out_fname}")
+        # cv2.imwrite(out_fname, image_vis)
+        # logger.info(f"Output saved to {out_fname}")
         context["entry_idx"] += 1
 
     @classmethod
