@@ -11,6 +11,7 @@ from typing import Any, ClassVar, Dict, List
 import torch
 import cv2
 import subprocess
+import numpy as np
 
 from detectron2.config import CfgNode, get_cfg
 from detectron2.data.detection_utils import read_image
@@ -271,12 +272,12 @@ class ShowAction(InferenceAction):
         return cfg
 
     @classmethod
-    def generate_vector(file_in, file_out):
+    def generate_vector(cls, file_in, file_out):
         cmd = "autotrace -filter-iterations=4 -input-format bmp -output-format svg -output-file " + file_out + " " + file_in
-        subprocess.Popen(cmd)
+        subprocess.Popen(cmd, shell=True, executable='/bin/bash')
 
     @classmethod
-    def double_image(image):
+    def double_image(cls, image):
         scale_percent = 200  # percent of original size
         width = int(image.shape[1] * scale_percent / 100)
         height = int(image.shape[0] * scale_percent / 100)
@@ -287,7 +288,7 @@ class ShowAction(InferenceAction):
         return image
 
     @classmethod
-    def find_body_part(body_parts, body_part_index):
+    def find_body_part(cls, body_parts, body_part_index):
         arr = body_parts.copy()
         arr[arr != body_part_index] = 0
         arr[arr == body_part_index] = 255
@@ -296,14 +297,15 @@ class ShowAction(InferenceAction):
         return contours
 
     @classmethod
-    def generate_bitmaps(image, output_orig, outline):
+    def generate_bitmaps(cls, prefix, image, output_orig, outline):
         blank = np.zeros(shape=image.shape, dtype=np.uint8)
         blank_outline = np.zeros(shape=image.shape, dtype=np.uint8)
         solid_outline = np.zeros(shape=image.shape, dtype=np.uint8)
 
         # Individual body parts
         for i in range(1, 24):
-            contours = find_body_part(orig, i)
+            #contours = cls.find_body_part(orig, i)
+            contours = cls.find_body_part(output_orig, i)
 
             if len(contours) > 0:
                 cv2.drawContours(image, contours, -1, (0, 0, 0), 2)
@@ -311,35 +313,35 @@ class ShowAction(InferenceAction):
 
         # Outline all parts    
         blank = cv2.bitwise_not(blank)
-        blank = double_image(blank)
-        cv2.imwrite("/content/blank.bmp", blank)
-        generate_vector("/content/blank.bmp", "/content/blank.svg")
+        blank = cls.double_image(blank)
+        cv2.imwrite("/content/" + prefix + "blank.bmp", blank)
+        cls.generate_vector("/content/" + prefix + "blank.bmp", "/content/" + prefix + "blank.svg")
 
         # Original image
-        image = double_image(image)
-        cv2.imwrite("/content/image.bmp", image)
-        generate_vector("/content/image.bmp", "/content/image.svg")
+        image = cls.double_image(image)
+        cv2.imwrite("/content/" + prefix + "image.bmp", image)
+        cls.generate_vector("/content/" + prefix + "image.bmp", "/content/" + prefix + "image.svg")
 
         # Gray scale image	
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        cv2.imwrite("/content/image_grey.bmp", gray)
-        generate_vector("/content/image_bw.bmp", "/content/image_bw.svg")
+        cv2.imwrite("/content/" + prefix + "image_bw.bmp", gray)
+        cls.generate_vector("/content/" + prefix + "image_bw.bmp", "/content/" + prefix + "image_bw.svg")
 
         # All in one outline
-        contours_o = find_body_part(outline, 1)
+        contours_o = cls.find_body_part(outline, 1)
         if len(contours_o) > 0:
             cv2.drawContours(blank_outline, contours_o, -1, (255, 255, 255), 2)
             cv2.drawContours(solid_outline, contours_o, -1, (255, 255, 255), -1)
 
         blank_outline = cv2.bitwise_not(blank_outline)
-        blank_outline = double_image(blank_outline)
-        cv2.imwrite("/content/blank_outline.bmp", blank_outline)
-        generate_vector("/content/blank_outline.bmp", "/content/blank_outline.svg")
+        blank_outline = cls.double_image(blank_outline)
+        cv2.imwrite("/content/" + prefix + "blank_outline.bmp", blank_outline)
+        cls.generate_vector("/content/" + prefix + "blank_outline.bmp", "/content/" + prefix + "blank_outline.svg")
 
         solid_outline = cv2.bitwise_not(solid_outline)
-        solid_outline = double_image(solid_outline)
-        cv2.imwrite("/content/solid_outline.bmp", solid_outline)
-        generate_vector("/content/solid_outline.bmp", "/content/solid_outline.svg")
+        solid_outline = cls.double_image(solid_outline)
+        cv2.imwrite("/content/" + prefix + "solid_outline.bmp", solid_outline)
+        cls.generate_vector("/content/" + prefix + "solid_outline.bmp", "/content/" + prefix + "solid_outline.svg")
 
     @classmethod
     def execute_on_outputs(
@@ -347,10 +349,21 @@ class ShowAction(InferenceAction):
     ):
         import cv2
         import numpy as np
+        import os
 
         visualizer = context["visualizer"]
         extractor = context["extractor"]
         image_fpath = entry["file_name"]
+
+        _,prefix = os.path.split(image_fpath)
+        prefix,_ = os.path.splitext(prefix)
+        prefix = "/results/" + prefix + "_"
+        print(prefix)
+        if not os.path.exists("/content/results"):
+          os.mkdir("/content/results")
+
+
+
         logger.info(f"Processing {image_fpath}")
         image = cv2.cvtColor(entry["image"], cv2.COLOR_BGR2GRAY)
         image = np.zeros(shape=image.shape, dtype=np.uint8)
@@ -419,17 +432,17 @@ class ShowAction(InferenceAction):
         image_target_bgr = np.full(image.shape, 255, dtype=np.uint8)
         image_target_bgr[y:y + h, x:x + w] = I
 
-        np.save("/content/output.npy", I)
+        np.save("/content/" + prefix + "output.npy", I)
 
-        cv2.imwrite("/content/mytest.jpg", image_target_bgr)
+        cv2.imwrite("/content/results/mytest.jpg", image_target_bgr)
 
         # output_orig
         # outline
         # I
 
-        generate_bitmaps(I, output_orig, outline)
+        cls.generate_bitmaps(prefix, I, output_orig, outline)
 
-        np.save("/content/output_outline.npy", outline)
+        #np.save("/content/output_outline.npy", outline)
 
         # entry_idx = context["entry_idx"] + 1
         # out_fname = cls._get_out_fname(entry_idx, context["out_fname"])
